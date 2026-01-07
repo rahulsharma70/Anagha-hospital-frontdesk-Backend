@@ -324,22 +324,22 @@ CASHFREE_CLIENT_SECRET = os.getenv("CASHFREE_CLIENT_SECRET", "")
 # ============================================
 
 # class RazorpayOrderCreate(BaseModel):
-    appointment_id: Optional[int] = None
-    operation_id: Optional[int] = None
-    hospital_registration: Optional[bool] = False  # For hospital registration payments
-    plan_name: Optional[str] = None  # Package/plan name
-    amount: float  # Will accept int and convert to float
-    currency: str = "INR"
-    
-    @validator('amount', pre=True)
-    def convert_amount_to_float(cls, v):
-        """Convert amount to float for consistency (handles int from mobile app)"""
-        if v is None:
-            raise ValueError("Amount is required")
-        try:
-            return float(v)
-        except (ValueError, TypeError):
-            raise ValueError(f"Invalid amount: {v}. Must be a number.")
+#     appointment_id: Optional[int] = None
+#     operation_id: Optional[int] = None
+#     hospital_registration: Optional[bool] = False  # For hospital registration payments
+#     plan_name: Optional[str] = None  # Package/plan name
+#     amount: float  # Will accept int and convert to float
+#     currency: str = "INR"
+#     
+#     @validator('amount', pre=True)
+#     def convert_amount_to_float(cls, v):
+#         """Convert amount to float for consistency (handles int from mobile app)"""
+#         if v is None:
+#             raise ValueError("Amount is required")
+#         try:
+#             return float(v)
+#         except (ValueError, TypeError):
+#             raise ValueError(f"Invalid amount: {v}. Must be a number.")
 
 # OLD RAZORPAY ENDPOINT - COMMENTED OUT (Replaced by Cashfree)
 # @router.post("/create-order-hospital")
@@ -1204,91 +1204,92 @@ def get_payment_status(
             detail=f"Error fetching payment status: {str(e)}"
         )
 
-@router.post("/{payment_id}/verify")
-def verify_payment_manually(
-    payment_id: int,
-    current_doctor: dict = Depends(get_current_doctor)
-):
-    """
-    Manually verify payment (admin/doctor function)
-    Fetches payment status from Razorpay and updates database
-    """
-    supabase = get_supabase()
-    if not supabase:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Database not configured"
-        )
-    
-    try:
-        # Get payment
-        result = supabase.table("payments").select("*").eq("id", payment_id).execute()
-        if not result.data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment not found"
-            )
-        
-        payment = result.data[0]
-        
-        if not payment.get("razorpay_payment_id"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Payment does not have Razorpay payment ID"
-            )
-        
-        # Fetch from Razorpay
-        razorpay_payment = RazorpayService.verify_payment_from_razorpay(
-            payment["razorpay_payment_id"]
-        )
-        
-        if not razorpay_payment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Payment not found in Razorpay"
-            )
-        
-        # Update payment status based on Razorpay status
-        razorpay_status = razorpay_payment.get("status")
-        new_status = None
-        
-        if razorpay_status == "captured":
-            new_status = "COMPLETED"
-        elif razorpay_status == "failed":
-            new_status = "FAILED"
-        elif razorpay_status == "authorized":
-            new_status = "PENDING"
-        
-        if new_status:
-            update_data = {
-                "status": new_status,
-                "updated_at": datetime.now().isoformat()
-            }
-            
-            if new_status == "COMPLETED":
-                update_data["completed_at"] = datetime.now().isoformat()
-            elif new_status == "FAILED":
-                update_data["failed_at"] = datetime.now().isoformat()
-                update_data["failure_reason"] = razorpay_payment.get("error_description")
-            
-            supabase.table("payments").update(update_data).eq("id", payment_id).execute()
-        
-        return {
-            "verified": True,
-            "status": new_status or payment["status"],
-            "razorpay_status": razorpay_status,
-            "details": {
-                "amount": razorpay_payment.get("amount", 0) / 100,
-                "currency": razorpay_payment.get("currency"),
-                "method": razorpay_payment.get("method")
-            }
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error verifying payment: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error verifying payment: {str(e)}"
-        )
+# OLD RAZORPAY VERIFY ENDPOINT - COMMENTED OUT (Replaced by Cashfree)
+# @router.post("/{payment_id}/verify")
+# def verify_payment_manually(
+#     payment_id: int,
+#     current_doctor: dict = Depends(get_current_doctor)
+# ):
+#     """
+#     Manually verify payment (admin/doctor function)
+#     Fetches payment status from Razorpay and updates database
+#     """
+#     supabase = get_supabase()
+#     if not supabase:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Database not configured"
+#         )
+#     
+#     try:
+#         # Get payment
+#         result = supabase.table("payments").select("*").eq("id", payment_id).execute()
+#         if not result.data:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail="Payment not found"
+#             )
+#         
+#         payment = result.data[0]
+#         
+#         if not payment.get("razorpay_payment_id"):
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Payment does not have Razorpay payment ID"
+#             )
+#         
+#         # Fetch from Razorpay
+#         razorpay_payment = RazorpayService.verify_payment_from_razorpay(
+#             payment["razorpay_payment_id"]
+#         )
+#         
+#         if not razorpay_payment:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail="Payment not found in Razorpay"
+#             )
+#         
+#         # Update payment status based on Razorpay status
+#         razorpay_status = razorpay_payment.get("status")
+#         new_status = None
+#         
+#         if razorpay_status == "captured":
+#             new_status = "COMPLETED"
+#         elif razorpay_status == "failed":
+#             new_status = "FAILED"
+#         elif razorpay_status == "authorized":
+#             new_status = "PENDING"
+#         
+#         if new_status:
+#             update_data = {
+#                 "status": new_status,
+#                 "updated_at": datetime.now().isoformat()
+#             }
+#             
+#             if new_status == "COMPLETED":
+#                 update_data["completed_at"] = datetime.now().isoformat()
+#             elif new_status == "FAILED":
+#                 update_data["failed_at"] = datetime.now().isoformat()
+#                 update_data["failure_reason"] = razorpay_payment.get("error_description")
+#             
+#             supabase.table("payments").update(update_data).eq("id", payment_id).execute()
+#         
+#         return {
+#             "verified": True,
+#             "status": new_status or payment["status"],
+#             "razorpay_status": razorpay_status,
+#             "details": {
+#                 "amount": razorpay_payment.get("amount", 0) / 100,
+#                 "currency": razorpay_payment.get("currency"),
+#                 "method": razorpay_payment.get("method")
+#             }
+#         }
+#         
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error verifying payment: {e}")
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail=f"Error verifying payment: {str(e)}"
+#         )
