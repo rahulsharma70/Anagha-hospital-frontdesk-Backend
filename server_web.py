@@ -69,7 +69,11 @@ app = FastAPI(
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure in production
+    allow_origins=[
+        "http://anaghahealthconnect.com/",
+        "http://www.anaghahealthconnect.com/",
+        "http://localhost:5173"  # optional for local dev
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
