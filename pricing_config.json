@@ -1,0 +1,56 @@
+{
+  "plans": [
+    {
+      "name": "Starter",
+      "description": "For 1 Doctor / 1 Hospital",
+      "installationPrice": 5000,
+      "monthlyPrice": 1000,
+      "features": [
+        "1 Doctor profile",
+        "1 Hospital",
+        "Appointment management",
+        "Email reminders",
+        "Basic analytics",
+        "Email support"
+      ],
+      "popular": false
+    },
+    {
+      "name": "Professional",
+      "description": "For 5 Doctors in 1 Hospital",
+      "installationPrice": 10000,
+      "monthlyPrice": 2000,
+      "features": [
+        "Up to 5 Doctor profiles",
+        "1 Hospital",
+        "SMS & Email reminders",
+        "Advanced analytics",
+        "Custom booking page",
+        "Payment integration",
+        "Priority support"
+      ],
+      "popular": true
+    },
+    {
+      "name": "Enterprise",
+      "description": "For 10 Doctors & 5 Hospitals",
+      "installationPrice": 20000,
+      "monthlyPrice": 5000,
+      "features": [
+        "Up to 10 Doctor profiles",
+        "Up to 5 Hospitals (same ownership)",
+        "Multi-location support",
+        "Custom integrations",
+        "Dedicated account manager",
+        "24/7 phone support",
+        "White-label option"
+      ],
+      "popular": false
+    }
+  ],
+  "currency": "INR",
+  "currency_symbol": "₹"
+}
+
+
+
