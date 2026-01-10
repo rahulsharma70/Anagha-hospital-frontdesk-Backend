@@ -89,11 +89,34 @@ async def get_current_user(
 async def get_current_doctor(
     current_user: dict = Depends(get_current_user)
 ):
-    """Ensure current user is a doctor"""
-    if current_user.get("role") != "doctor":
+    """Ensure current user is a doctor and return doctor profile from doctors table"""
+    supabase = get_supabase()
+    if not supabase:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database not configured"
+        )
+    
+    # Check if user has a linked doctor profile in doctors table
+    try:
+        doctor_result = supabase.table("doctors").select("*").eq("user_id", current_user["id"]).eq("is_active", True).execute()
+        if not doctor_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Doctor access required. No doctor profile found."
+            )
+        doctor = doctor_result.data[0]
+        # Merge user and doctor data for backward compatibility
+        doctor["id"] = doctor["id"]  # Doctor ID
+        doctor["user_id"] = current_user["id"]  # User ID for auth
+        doctor["role"] = "doctor"  # Add role for compatibility
+        doctor["name"] = doctor.get("name", current_user.get("name", ""))
+        return doctor
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Doctor access required"
+            detail=f"Error verifying doctor access: {str(e)}"
         )
-    return current_user
 

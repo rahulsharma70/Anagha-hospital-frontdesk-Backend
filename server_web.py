@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -91,10 +92,54 @@ app.include_router(payments.router)
 app.include_router(admin.router)
 app.include_router(whatsapp_logs.router)
 
+# Validation error handler for detailed debugging
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with detailed information"""
+    errors = exc.errors()
+    error_details = []
+    for error in errors:
+        error_details.append({
+            "field": ".".join(str(loc) for loc in error["loc"]),
+            "message": error["msg"],
+            "type": error["type"],
+            "input": error.get("input")
+        })
+    
+    # Log validation errors (without trying to read body which may be consumed)
+    try:
+        import json
+        print("=" * 50)
+        print(f"VALIDATION ERROR - {request.method} {request.url.path}")
+        print("Validation Errors:")
+        for detail in error_details:
+            input_value = detail.get('input', 'N/A')
+            # Truncate long values for readability
+            if isinstance(input_value, str) and len(input_value) > 100:
+                input_value = input_value[:100] + "..."
+            print(f"  - Field '{detail['field']}': {detail['message']}")
+            print(f"    Type: {detail['type']}, Received: {input_value}")
+        print("=" * 50)
+    except Exception as e:
+        print(f"Error in validation error handler: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": error_details,
+            "message": "Validation error"
+        }
+    )
+
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler with error logging"""
+    # Don't handle RequestValidationError here - it's handled above
+    if isinstance(exc, RequestValidationError):
+        raise exc
     log_error_with_context(exc, request)
     return JSONResponse(
         status_code=500,

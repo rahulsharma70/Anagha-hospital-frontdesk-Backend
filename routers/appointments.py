@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from datetime import date, datetime
 from database import get_supabase
 from schemas import AppointmentCreate, AppointmentResponse, GuestAppointmentCreate
-from auth import get_current_user, get_current_doctor
+from auth import get_current_user, get_current_doctor, get_password_hash
 from typing import List
 import logging
+import secrets
 
 # Import services
 from services.csv_service import save_appointment_csv
@@ -53,8 +54,8 @@ def book_appointment(
                 detail="Cannot book appointment for past dates"
             )
         
-        # Verify doctor exists and is a doctor
-        doctor_result = supabase.table("users").select("*").eq("id", appointment.doctor_id).eq("role", "doctor").eq("is_active", True).execute()
+        # Verify doctor exists in doctors table
+        doctor_result = supabase.table("doctors").select("*").eq("id", appointment.doctor_id).eq("is_active", True).execute()
         if not doctor_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -194,6 +195,8 @@ def book_appointment_guest(
     background_tasks: BackgroundTasks,
 ):
     """Book an appointment as a guest (no authentication required) - using Supabase"""
+    logger.info(f"Guest booking request received: patient_name={appointment.patient_name}, patient_phone={appointment.patient_phone}, doctor_id={appointment.doctor_id}, date={appointment.date}, time_slot={appointment.time_slot}")
+    
     supabase = get_supabase()
     if not supabase:
         raise HTTPException(
@@ -229,8 +232,8 @@ def book_appointment_guest(
                 detail="Valid phone number is required"
             )
         
-        # Verify doctor exists and is a doctor
-        doctor_result = supabase.table("users").select("*").eq("id", appointment.doctor_id).eq("role", "doctor").eq("is_active", True).execute()
+        # Verify doctor exists in doctors table
+        doctor_result = supabase.table("doctors").select("*").eq("id", appointment.doctor_id).eq("is_active", True).execute()
         if not doctor_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -288,13 +291,15 @@ def book_appointment_guest(
             # Use existing patient ID
             guest_user_id = patient_result.data[0]["id"]
         else:
-            # Create temporary guest user record (inactive, no password)
+            # Create temporary guest user record (inactive, random password hash)
+            # Generate a random password hash for guest accounts (they can't login)
+            random_password = secrets.token_urlsafe(32)  # Generate random password
             guest_user = {
                 "name": appointment.patient_name.strip(),
                 "mobile": patient_phone_clean,
                 "role": "patient",
                 "is_active": False,  # Mark as inactive guest account
-                "password": ""  # No password for guest accounts
+                "password_hash": get_password_hash(random_password)  # Random hash for guest accounts
             }
             guest_result = supabase.table("users").insert(guest_user).execute()
             if guest_result.data:
@@ -393,10 +398,10 @@ def get_my_appointments(current_user: dict = Depends(get_current_user)):
         
         appointments = []
         for apt in (result.data or []):
-            # Fetch doctor info
+            # Fetch doctor info from doctors table
             doctor_info = {}
             if apt.get("doctor_id"):
-                doctor_result = supabase.table("users").select("id, name, mobile").eq("id", apt["doctor_id"]).execute()
+                doctor_result = supabase.table("doctors").select("id, name, mobile").eq("id", apt["doctor_id"]).execute()
                 if doctor_result.data:
                     doctor_info = doctor_result.data[0]
             
@@ -638,8 +643,8 @@ def get_available_slots(
         )
     
     try:
-        # Verify doctor exists
-        doctor_result = supabase.table("users").select("*").eq("id", doctor_id).eq("role", "doctor").eq("is_active", True).execute()
+        # Verify doctor exists in doctors table
+        doctor_result = supabase.table("doctors").select("*").eq("id", doctor_id).eq("is_active", True).execute()
         if not doctor_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

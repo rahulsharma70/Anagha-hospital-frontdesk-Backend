@@ -31,8 +31,8 @@ def book_operation(
                 detail="Cannot book operation for past dates"
             )
         
-        # Verify doctor exists and is a doctor
-        doctor_result = supabase.table("users").select("*").eq("id", operation.doctor_id).eq("role", "doctor").eq("is_active", True).execute()
+        # Verify doctor exists in doctors table
+        doctor_result = supabase.table("doctors").select("*").eq("id", operation.doctor_id).eq("is_active", True).execute()
         if not doctor_result.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -144,10 +144,10 @@ def get_my_operations(current_user: dict = Depends(get_current_user)):
         
         operations = []
         for op in (result.data or []):
-            # Fetch doctor info
+            # Fetch doctor info from doctors table
             doctor_info = {}
             if op.get("doctor_id"):
-                doctor_result = supabase.table("users").select("id, name, mobile").eq("id", op["doctor_id"]).execute()
+                doctor_result = supabase.table("doctors").select("id, name, mobile").eq("id", op["doctor_id"]).execute()
                 if doctor_result.data:
                     doctor_info = doctor_result.data[0]
             
@@ -341,10 +341,13 @@ def get_operations_by_specialty(
         return []
     
     try:
-        if current_user.get("role") == "doctor":
+        # Check if user is a doctor by checking doctors table
+        doctor_check = supabase.table("doctors").select("id").eq("user_id", current_user["id"]).eq("is_active", True).execute()
+        if doctor_check.data:
+            doctor_id = doctor_check.data[0]["id"]
             result = supabase.table("operations").select("*").eq(
                 "specialty", specialty
-            ).eq("doctor_id", current_user["id"]).order("operation_date", desc=False).execute()
+            ).eq("doctor_id", doctor_id).order("operation_date", desc=False).execute()
         else:
             result = supabase.table("operations").select("*").eq(
                 "specialty", specialty
@@ -359,10 +362,10 @@ def get_operations_by_specialty(
                 if patient_result.data:
                     patient_info = patient_result.data[0]
             
-            # Fetch doctor info
+            # Fetch doctor info from doctors table
             doctor_info = {}
             if op.get("doctor_id"):
-                doctor_result = supabase.table("users").select("id, name, mobile").eq("id", op["doctor_id"]).execute()
+                doctor_result = supabase.table("doctors").select("id, name, mobile").eq("id", op["doctor_id"]).execute()
                 if doctor_result.data:
                     doctor_info = doctor_result.data[0]
             

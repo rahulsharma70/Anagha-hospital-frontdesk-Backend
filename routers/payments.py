@@ -578,30 +578,41 @@ def create_cashfree_order(
         }
         
         # Make request to Cashfree
+        # Cashfree API requires version header in format: "2023-08-01" or "2022-09-01"
+        headers = {
+            "x-client-id": CASHFREE_CLIENT_ID,
+            "x-client-secret": CASHFREE_CLIENT_SECRET,
+            "x-api-version": "2022-09-01",  # Cashfree API version (use 2022-09-01 for stable version)
+            "Content-Type": "application/json"
+        }
+        logger.info(f"🔵 DEBUG: Request headers: x-client-id={CASHFREE_CLIENT_ID[:10]}..., x-api-version=2022-09-01")
+        
         response = requests.post(
             f"{CASHFREE_API_URL}/orders",
-            headers={
-                "x-client-id": CASHFREE_CLIENT_ID,
-                "x-client-secret": CASHFREE_CLIENT_SECRET,
-                "Content-Type": "application/json"
-            },
+            headers=headers,
             json=payload
         )
         
+        logger.info(f"🔵 DEBUG: Cashfree API response status: {response.status_code}")
+        logger.info(f"🔵 DEBUG: Cashfree API response body: {response.text[:500]}")
+        
         if response.status_code != 200:
-            logger.error(f"Cashfree order creation failed: {response.text}")
+            logger.error(f"❌ DEBUG: Cashfree order creation failed - Status: {response.status_code}, Response: {response.text}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Cashfree order creation failed"
+                detail=f"Cashfree order creation failed: {response.text[:200]}"
             )
         
         data = response.json()
+        logger.info(f"🔵 DEBUG: Cashfree response parsed: {data.keys()}")
         
         if not data.get("payment_session_id"):
+            logger.error(f"❌ DEBUG: Missing payment_session_id in response: {data}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Invalid response from Cashfree"
+                detail="Invalid response from Cashfree - missing payment_session_id"
             )
+        logger.info(f"✅ DEBUG: Payment session ID received: {data.get('payment_session_id')[:20]}...")
         
         # Save payment record
         payment_record = {
@@ -613,7 +624,7 @@ def create_cashfree_order(
             "payment_method": "cashfree",
             "status": "PENDING",
             "cashfree_order_id": order_id,
-            "cashfree_payment_session_id": data["payment_session_id"],
+            "cashfree_session_id": data["payment_session_id"],
             "initiated_at": datetime.now().isoformat(),
         }
         
@@ -713,30 +724,41 @@ def create_cashfree_order_guest(
         }
         
         # Make request to Cashfree
+        # Cashfree API requires version header in format: "2023-08-01" or "2022-09-01"
+        headers = {
+            "x-client-id": CASHFREE_CLIENT_ID,
+            "x-client-secret": CASHFREE_CLIENT_SECRET,
+            "x-api-version": "2022-09-01",  # Cashfree API version (use 2022-09-01 for stable version)
+            "Content-Type": "application/json"
+        }
+        logger.info(f"🔵 DEBUG: Request headers: x-client-id={CASHFREE_CLIENT_ID[:10]}..., x-api-version=2022-09-01")
+        
         response = requests.post(
             f"{CASHFREE_API_URL}/orders",
-            headers={
-                "x-client-id": CASHFREE_CLIENT_ID,
-                "x-client-secret": CASHFREE_CLIENT_SECRET,
-                "Content-Type": "application/json"
-            },
+            headers=headers,
             json=payload
         )
         
+        logger.info(f"🔵 DEBUG: Cashfree API response status: {response.status_code}")
+        logger.info(f"🔵 DEBUG: Cashfree API response body: {response.text[:500]}")
+        
         if response.status_code != 200:
-            logger.error(f"Cashfree order creation failed: {response.text}")
+            logger.error(f"❌ DEBUG: Cashfree order creation failed - Status: {response.status_code}, Response: {response.text}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Cashfree order creation failed"
+                detail=f"Cashfree order creation failed: {response.text[:200]}"
             )
         
         data = response.json()
+        logger.info(f"🔵 DEBUG: Cashfree response parsed: {data.keys()}")
         
         if not data.get("payment_session_id"):
+            logger.error(f"❌ DEBUG: Missing payment_session_id in response: {data}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Invalid response from Cashfree"
+                detail="Invalid response from Cashfree - missing payment_session_id"
             )
+        logger.info(f"✅ DEBUG: Payment session ID received: {data.get('payment_session_id')[:20]}...")
         
         # Save payment record
         payment_record = {
@@ -748,7 +770,7 @@ def create_cashfree_order_guest(
             "payment_method": "cashfree",
             "status": "PENDING",
             "cashfree_order_id": order_id,
-            "cashfree_payment_session_id": data["payment_session_id"],
+            "cashfree_session_id": data["payment_session_id"],
             "initiated_at": datetime.now().isoformat(),
         }
         
@@ -784,6 +806,9 @@ class CashfreeHospitalOrderCreate(BaseModel):
     plan_name: str
     amount: float
     currency: str = "INR"
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_email: Optional[str] = None
 
 @router.post("/create-order-hospital")
 def create_hospital_registration_order_cashfree(
@@ -793,14 +818,22 @@ def create_hospital_registration_order_cashfree(
     Create Cashfree payment order for hospital registration
     Returns payment_session_id for frontend Cashfree Checkout
     """
+    logger.info("=" * 60)
+    logger.info("🔵 DEBUG: Hospital Payment Order Creation Started")
+    logger.info("=" * 60)
+    logger.info(f"🔵 DEBUG: Received order data - amount: {order_data.amount}, plan: {order_data.plan_name}")
+    logger.info(f"🔵 DEBUG: Customer details - name: {order_data.customer_name}, phone: {order_data.customer_phone}, email: {order_data.customer_email}")
+    
     supabase = get_supabase()
     if not supabase:
+        logger.error("❌ DEBUG: Database not configured")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database not configured"
         )
 
     if order_data.amount <= 0:
+        logger.error(f"❌ DEBUG: Invalid amount: {order_data.amount}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Amount must be greater than 0"
@@ -812,46 +845,71 @@ def create_hospital_registration_order_cashfree(
         timestamp = int(time.time())
         order_id = f"HOSPREG_{timestamp}"
         
+        # Prepare customer details - Cashfree requires phone number if provided, so use valid format or omit
+        customer_details = {
+            "customer_id": "guest",
+            "customer_name": order_data.customer_name or "Hospital Registration",
+        }
+        
+        # Only include phone if provided and not empty
+        if order_data.customer_phone and order_data.customer_phone.strip():
+            customer_details["customer_phone"] = order_data.customer_phone.strip()
+        # Only include email if provided and not empty
+        if order_data.customer_email and order_data.customer_email.strip():
+            customer_details["customer_email"] = order_data.customer_email.strip()
+        
+        logger.info(f"🔵 DEBUG: Customer details prepared: {customer_details}")
+        
         payload = {
             "order_id": order_id,
             "order_amount": float(order_data.amount),
             "order_currency": order_data.currency,
-            "customer_details": {
-                "customer_id": "guest",
-                "customer_name": "Hospital Registration",
-                "customer_phone": "",
-                "customer_email": ""
-            },
-            "notify_url": f"{os.getenv('API_BASE_URL', 'https://api.yourdomain.com')}/api/payments/webhook"
+            "customer_details": customer_details,
+            "notify_url": f"{os.getenv('API_BASE_URL', 'https://api.yourdomain.com')}/api/payments/webhook/cashfree"
         }
         
+        logger.info(f"🔵 DEBUG: Payload prepared: order_id={order_id}, amount={order_data.amount}, currency={order_data.currency}")
+        logger.info(f"🔵 DEBUG: Making request to Cashfree API: {CASHFREE_API_URL}/orders")
+        
         # Make request to Cashfree
+        # Cashfree API requires version header in format: "2023-08-01" or "2022-09-01"
+        headers = {
+            "x-client-id": CASHFREE_CLIENT_ID,
+            "x-client-secret": CASHFREE_CLIENT_SECRET,
+            "x-api-version": "2022-09-01",  # Cashfree API version (use 2022-09-01 for stable version)
+            "Content-Type": "application/json"
+        }
+        logger.info(f"🔵 DEBUG: Request headers: x-client-id={CASHFREE_CLIENT_ID[:10]}..., x-api-version=2022-09-01")
+        
         response = requests.post(
             f"{CASHFREE_API_URL}/orders",
-            headers={
-                "x-client-id": CASHFREE_CLIENT_ID,
-                "x-client-secret": CASHFREE_CLIENT_SECRET,
-                "Content-Type": "application/json"
-            },
+            headers=headers,
             json=payload
         )
         
+        logger.info(f"🔵 DEBUG: Cashfree API response status: {response.status_code}")
+        logger.info(f"🔵 DEBUG: Cashfree API response body: {response.text[:500]}")
+        
         if response.status_code != 200:
-            logger.error(f"Cashfree order creation failed: {response.text}")
+            logger.error(f"❌ DEBUG: Cashfree order creation failed - Status: {response.status_code}, Response: {response.text}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Cashfree order creation failed"
+                detail=f"Cashfree order creation failed: {response.text[:200]}"
             )
         
         data = response.json()
+        logger.info(f"🔵 DEBUG: Cashfree response parsed: {data.keys()}")
         
         if not data.get("payment_session_id"):
+            logger.error(f"❌ DEBUG: Missing payment_session_id in response: {data}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Invalid response from Cashfree"
+                detail="Invalid response from Cashfree - missing payment_session_id"
             )
+        logger.info(f"✅ DEBUG: Payment session ID received: {data.get('payment_session_id')[:20]}...")
         
         # Save payment record
+        logger.info("🔵 DEBUG: Saving payment record to database...")
         payment_record = {
             "user_id": None,
             "hospital_id": None,
@@ -860,31 +918,50 @@ def create_hospital_registration_order_cashfree(
             "payment_method": "cashfree",
             "status": "PENDING",
             "cashfree_order_id": order_id,
-            "cashfree_payment_session_id": data["payment_session_id"],
+            "cashfree_session_id": data["payment_session_id"],
             "initiated_at": datetime.now().isoformat(),
             "metadata": {
                 "type": "hospital_registration",
                 "plan_name": order_data.plan_name,
-                "total_amount": order_data.amount
+                "total_amount": order_data.amount,
+                "customer_name": order_data.customer_name,
+                "customer_phone": order_data.customer_phone,
+                "customer_email": order_data.customer_email
             }
         }
         
+        logger.info(f"🔵 DEBUG: Payment record to insert: {payment_record}")
         result = supabase.table("payments").insert(payment_record).execute()
         if not result.data:
+            logger.error("❌ DEBUG: Failed to insert payment record")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to save payment record"
             )
         
         payment = result.data[0]
+        logger.info(f"✅ DEBUG: Payment record saved with ID: {payment['id']}")
         
-        return {
+        response_data = {
             "payment_id": payment["id"],
             "payment_session_id": data["payment_session_id"],
             "order_id": order_id,
             "amount": float(order_data.amount),
             "currency": order_data.currency
         }
+        logger.info("=" * 60)
+        logger.info(f"✅ DEBUG: Hospital Payment Order Creation SUCCESS - Payment ID: {payment['id']}")
+        logger.info("=" * 60)
+        return response_data
+    except HTTPException as he:
+        logger.error(f"❌ DEBUG: HTTPException - {he.status_code}: {he.detail}")
+        raise
+    except Exception as e:
+        logger.error(f"❌ DEBUG: Unexpected error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating payment order: {str(e)}"
+        )
         
     except HTTPException:
         raise
@@ -1356,10 +1433,13 @@ def get_payment(
         payment = result.data[0]
         
         # Check authorization
-        if payment["user_id"] != current_user["id"]:
+        if payment.get("user_id") != current_user["id"]:
             # Allow doctors to view payments for their hospital
-            if current_user.get("role") == "doctor":
-                if payment.get("hospital_id") != current_user.get("hospital_id"):
+            # Check if user is a doctor by checking doctors table
+            doctor_check = supabase.table("doctors").select("hospital_id").eq("user_id", current_user["id"]).eq("is_active", True).execute()
+            if doctor_check.data:
+                doctor_hospital_id = doctor_check.data[0].get("hospital_id")
+                if payment.get("hospital_id") != doctor_hospital_id:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Not authorized"

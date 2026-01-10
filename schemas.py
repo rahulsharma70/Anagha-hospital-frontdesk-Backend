@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, field_validator, model_validator, validator
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Union
 from models import UserRole, AppointmentStatus, OperationStatus, Specialty, HospitalStatus
 
 # User Schemas
@@ -54,10 +54,14 @@ class UserCreate(UserBase):
             # Hospital is optional for patients (frontend allows it to be optional)
             pass
         elif role_value == "doctor" or self.role == UserRole.DOCTOR:
+            # Note: Doctors are now registered via /api/users/register-doctor endpoint
+            # This validation still works for backward compatibility during migration
             if not self.degree:
                 raise ValueError('Degree is required for doctors')
             if not self.institute_name:
                 raise ValueError('Institute name is required for doctors')
+            if not self.hospital_id:
+                raise ValueError('Hospital selection is required for doctors')
         return self
 
 class UserLogin(BaseModel):
@@ -98,19 +102,59 @@ class GuestAppointmentCreate(BaseModel):
     patient_name: str
     patient_phone: str
     doctor_id: int
-    date: date
+    date: Union[date, str]  # Accept both date object and string
     time_slot: str
     reason: Optional[str] = None
     
-    @validator('time_slot')
+    @field_validator('doctor_id', mode='before')
+    @classmethod
+    def parse_doctor_id(cls, v):
+        """Convert doctor_id to int if it's a string"""
+        if isinstance(v, str):
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                raise ValueError(f'doctor_id must be a valid integer, got: {v} (type: {type(v).__name__})')
+        if not isinstance(v, int):
+            try:
+                return int(v)
+            except (ValueError, TypeError):
+                raise ValueError(f'doctor_id must be an integer, got: {type(v).__name__} with value: {v}')
+        return v
+    
+    @field_validator('date', mode='before')
+    @classmethod
+    def parse_date(cls, v):
+        """Parse date from string if needed"""
+        if isinstance(v, str):
+            try:
+                # Try parsing ISO format (YYYY-MM-DD)
+                return datetime.strptime(v, "%Y-%m-%d").date()
+            except ValueError:
+                # Try other common formats
+                try:
+                    return datetime.strptime(v, "%Y/%m/%d").date()
+                except ValueError:
+                    raise ValueError(f'Invalid date format: {v}. Expected YYYY-MM-DD')
+        return v
+    
+    @field_validator('time_slot')
+    @classmethod
     def validate_time_slot(cls, v):
+        """Validate and normalize time slot format"""
+        # Normalize time slot (remove seconds if present, ensure HH:MM format)
+        if isinstance(v, str):
+            # Remove seconds if present (e.g., "10:00:00" -> "10:00")
+            if len(v) > 5:
+                v = v[:5]
+        
         valid_slots = [
             "09:30", "10:00", "10:30", "11:00", "11:30", "12:00",
             "12:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30",
             "18:00", "18:30", "19:00", "19:30", "20:00", "20:30"
         ]
         if v not in valid_slots:
-            raise ValueError(f'Invalid time slot. Must be one of: {", ".join(valid_slots)}')
+            raise ValueError(f'Invalid time slot: {v}. Must be one of: {", ".join(valid_slots)}')
         return v
 
 class AppointmentResponse(AppointmentBase):

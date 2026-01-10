@@ -21,7 +21,8 @@ else:
 
 # Supabase Configuration (shared with mobile project)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Backend should use service role key to bypass RLS for server-side operations
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
 
 # Initialize Supabase client
 supabase: Optional[object] = None
@@ -29,7 +30,9 @@ if SUPABASE_URL and SUPABASE_KEY:
     try:
         from supabase import create_client, Client
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-        print("✅ Supabase client initialized successfully (shared with mobile)")
+        # Check if using service role key
+        key_type = "service role" if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "anon"
+        print(f"✅ Supabase client initialized successfully (shared with mobile) - using {key_type} key")
     except Exception as e:
         print(f"⚠️ Warning: Could not initialize Supabase client: {e}")
         print("⚠️ Server will continue with in-memory storage as fallback")

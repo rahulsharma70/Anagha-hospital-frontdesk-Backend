@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@cashfreepayments/cashfree-js": "^1.0.5"
+  }
+}
