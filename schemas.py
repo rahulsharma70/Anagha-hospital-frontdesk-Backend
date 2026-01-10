@@ -93,6 +93,26 @@ class AppointmentBase(BaseModel):
 class AppointmentCreate(AppointmentBase):
     reason: Optional[str] = None  # Allow reason/notes for appointments
 
+# Guest Appointment Schema (no auth required)
+class GuestAppointmentCreate(BaseModel):
+    patient_name: str
+    patient_phone: str
+    doctor_id: int
+    date: date
+    time_slot: str
+    reason: Optional[str] = None
+    
+    @validator('time_slot')
+    def validate_time_slot(cls, v):
+        valid_slots = [
+            "09:30", "10:00", "10:30", "11:00", "11:30", "12:00",
+            "12:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30",
+            "18:00", "18:30", "19:00", "19:30", "20:00", "20:30"
+        ]
+        if v not in valid_slots:
+            raise ValueError(f'Invalid time slot. Must be one of: {", ".join(valid_slots)}')
+        return v
+
 class AppointmentResponse(AppointmentBase):
     id: int
     user_id: int

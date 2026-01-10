@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from datetime import date, datetime
 from database import get_supabase
-from schemas import AppointmentCreate, AppointmentResponse
+from schemas import AppointmentCreate, AppointmentResponse, GuestAppointmentCreate
 from auth import get_current_user, get_current_doctor
 from typing import List
 import logging
@@ -183,6 +183,196 @@ def book_appointment(
         raise
     except Exception as e:
         logger.error(f"Error booking appointment: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error booking appointment: {str(e)}"
+        )
+
+@router.post("/book-guest", response_model=dict)
+def book_appointment_guest(
+    appointment: GuestAppointmentCreate,
+    background_tasks: BackgroundTasks,
+):
+    """Book an appointment as a guest (no authentication required) - using Supabase"""
+    supabase = get_supabase()
+    if not supabase:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database not configured"
+        )
+    
+    try:
+        # Validate time slot
+        if not is_valid_time_slot(appointment.time_slot):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid time slot. Must be between 9:30 AM - 3:30 PM or 6:00 PM - 8:30 PM"
+            )
+        
+        # Check if date is in the past
+        if appointment.date < date.today():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot book appointment for past dates"
+            )
+        
+        # Validate patient info
+        if not appointment.patient_name or len(appointment.patient_name.strip()) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Patient name must be at least 2 characters"
+            )
+        
+        if not appointment.patient_phone or len(appointment.patient_phone.strip()) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Valid phone number is required"
+            )
+        
+        # Verify doctor exists and is a doctor
+        doctor_result = supabase.table("users").select("*").eq("id", appointment.doctor_id).eq("role", "doctor").eq("is_active", True).execute()
+        if not doctor_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Doctor not found"
+            )
+        doctor = doctor_result.data[0]
+        
+        # Get doctor's hospital_id (required)
+        doctor_hospital_id = doctor.get("hospital_id")
+        if not doctor_hospital_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Doctor is not associated with any hospital"
+            )
+        
+        hospital_id = doctor_hospital_id
+        
+        # Verify hospital exists and is approved
+        hospital_result = supabase.table("hospitals").select("*").eq("id", hospital_id).execute()
+        if not hospital_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Hospital not found"
+            )
+        hospital = hospital_result.data[0]
+        
+        # Ensure hospital is approved
+        if hospital.get("status") != "approved":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot book appointment with unapproved hospital"
+            )
+        
+        # Check if time slot is already booked for this doctor on this date
+        existing_result = supabase.table("appointments").select("*").eq(
+            "doctor_id", appointment.doctor_id
+        ).eq("date", str(appointment.date)).eq("time_slot", appointment.time_slot).neq(
+            "status", "cancelled"
+        ).execute()
+        
+        if existing_result.data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Time slot already booked"
+            )
+        
+        # Create or find guest patient record
+        patient_phone_clean = appointment.patient_phone.strip()
+        
+        # Check if patient exists
+        patient_result = supabase.table("users").select("id").eq("mobile", patient_phone_clean).eq("role", "patient").execute()
+        guest_user_id = None
+        
+        if patient_result.data:
+            # Use existing patient ID
+            guest_user_id = patient_result.data[0]["id"]
+        else:
+            # Create temporary guest user record (inactive, no password)
+            guest_user = {
+                "name": appointment.patient_name.strip(),
+                "mobile": patient_phone_clean,
+                "role": "patient",
+                "is_active": False,  # Mark as inactive guest account
+                "password": ""  # No password for guest accounts
+            }
+            guest_result = supabase.table("users").insert(guest_user).execute()
+            if guest_result.data:
+                guest_user_id = guest_result.data[0]["id"]
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to create guest patient record"
+                )
+        
+        # Create appointment record
+        appointment_record = {
+            "user_id": guest_user_id,
+            "doctor_id": appointment.doctor_id,
+            "hospital_id": hospital_id,
+            "date": str(appointment.date),
+            "time_slot": appointment.time_slot,
+            "status": "pending",  # Pending payment confirmation
+            "reason": appointment.reason
+        }
+        
+        result = supabase.table("appointments").insert(appointment_record).execute()
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create appointment"
+            )
+        
+        db_appointment = result.data[0]
+        
+        # Save to CSV and send WhatsApp (background tasks)
+        if hospital_id and hospital:
+            csv_data = {
+                "name": appointment.patient_name.strip(),
+                "mobile": patient_phone_clean,
+                "date": str(appointment.date),
+                "time_slot": appointment.time_slot,
+                "doctor": doctor.get("name", ""),
+                "specialty": "",
+                "followup_date": ""
+            }
+            
+            # Save to CSV in background
+            background_tasks.add_task(save_appointment_csv, hospital_id, csv_data)
+            
+            # Send WhatsApp confirmation if enabled
+            if hospital.get("whatsapp_enabled") == "true" or hospital.get("whatsapp_enabled") is True:
+                message = get_confirmation_message(
+                    patient_name=appointment.patient_name.strip(),
+                    doctor_name=doctor.get("name", ""),
+                    date=str(appointment.date),
+                    time_slot=appointment.time_slot,
+                    hospital_name=hospital.get("name", ""),
+                    specialty=None,
+                    custom_template=hospital.get("whatsapp_confirmation_template")
+                )
+                background_tasks.add_task(
+                    send_whatsapp_message_by_hospital_id,
+                    hospital_id=hospital_id,
+                    mobile=patient_phone_clean,
+                    message=message
+                )
+        
+        return {
+            "id": db_appointment["id"],
+            "message": "Appointment booked successfully. Please complete payment to confirm.",
+            "status": db_appointment["status"],
+            "doctor_id": appointment.doctor_id,
+            "hospital_id": hospital_id,
+            "date": str(appointment.date),
+            "time_slot": appointment.time_slot,
+            "is_guest": True
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error booking guest appointment: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error booking appointment: {str(e)}"

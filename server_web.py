@@ -70,8 +70,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://anaghahealthconnect.com/",
-        "http://www.anaghahealthconnect.com/",
+        "https://anaghahealthconnect.com",
+        "https://www.anaghahealthconnect.com",
         "http://localhost:5173"  # optional for local dev
     ],
     allow_credentials=True,
