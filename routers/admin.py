@@ -67,7 +67,7 @@ def get_pricing(admin_user: dict = Depends(get_admin_user)):
             "plans": [
                 {
                     "name": "Starter",
-                    "price": "999",
+                    "price": "1",
                     "period": "month",
                     "description": "Perfect for small clinics",
                     "features": ["Up to 5 doctors", "Unlimited appointments", "Basic scheduling", "Email support"],
@@ -95,8 +95,8 @@ def get_public_pricing():
                 {
                     "name": "Starter",
                     "description": "For 1 Doctor / 1 Hospital",
-                    "installationPrice": 5000,
-                    "monthlyPrice": 1000,
+                    "installationPrice": 1,
+                    "monthlyPrice": 1,
                     "features": [
                         "1 Doctor profile",
                         "1 Hospital",
@@ -110,8 +110,8 @@ def get_public_pricing():
                 {
                     "name": "Professional",
                     "description": "For 5 Doctors in 1 Hospital",
-                    "installationPrice": 10000,
-                    "monthlyPrice": 2000,
+                    "installationPrice": 5,
+                    "monthlyPrice": 5,
                     "features": [
                         "Up to 5 Doctor profiles",
                         "1 Hospital",
@@ -126,8 +126,8 @@ def get_public_pricing():
                 {
                     "name": "Enterprise",
                     "description": "For 10 Doctors & 5 Hospitals",
-                    "installationPrice": 20000,
-                    "monthlyPrice": 5000,
+                    "installationPrice": 10,
+                    "monthlyPrice": 10,
                     "features": [
                         "Up to 10 Doctor profiles",
                         "Up to 5 Hospitals (same ownership)",
