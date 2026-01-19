@@ -1085,6 +1085,110 @@ def _process_webhook_payment(order_id: str, payment_status: str):
                 }).eq("id", payment["operation_id"]).execute()
                 logger.info(f"Operation {payment['operation_id']} confirmed via payment {payment_id}")
             
+            # Handle hospital registration payment - send email automatically
+            payment_metadata = payment.get("metadata") or {}
+            if payment_metadata.get("type") == "hospital_registration":
+                logger.info(f"Payment {payment_id} is for hospital registration - checking for hospital record and sending email")
+                
+                # Check if hospital is already registered (check by payment_id in payments table or by email from metadata)
+                hospital_id = payment.get("hospital_id")
+                hospital_result = None
+                
+                if hospital_id:
+                    # Hospital is linked to payment, get hospital data
+                    hospital_result = supabase.table("hospitals").select("*").eq("id", hospital_id).execute()
+                
+                if hospital_result and hospital_result.data and len(hospital_result.data) > 0:
+                    # Hospital is registered, send email with hospital data
+                    hospital = hospital_result.data[0]
+                    logger.info(f"Hospital {hospital['id']} found for payment {payment_id} - sending registration email")
+                    
+                    from services.email_service import send_hospital_registration_email
+                    try:
+                        # Prepare hospital data for email
+                        hospital_data = {
+                            "id": hospital.get("id"),
+                            "name": hospital.get("name"),
+                            "email": hospital.get("email"),
+                            "mobile": hospital.get("mobile"),
+                            "address_line1": hospital.get("address_line1"),
+                            "address_line2": hospital.get("address_line2"),
+                            "address_line3": hospital.get("address_line3"),
+                            "city": hospital.get("city"),
+                            "state": hospital.get("state"),
+                            "pincode": hospital.get("pincode"),
+                            "upi_id": hospital.get("upi_id"),
+                            "gpay_upi_id": hospital.get("gpay_upi_id"),
+                            "phonepay_upi_id": hospital.get("phonepay_upi_id"),
+                            "paytm_upi_id": hospital.get("paytm_upi_id"),
+                            "bhim_upi_id": hospital.get("bhim_upi_id"),
+                            "registration_date": hospital.get("created_at") or datetime.now().isoformat()
+                        }
+                        
+                        # Send email in background thread (don't block webhook response)
+                        import threading
+                        def send_email_thread():
+                            try:
+                                import asyncio
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                loop.run_until_complete(send_hospital_registration_email(hospital_data, hospital.get("id")))
+                                loop.close()
+                            except Exception as e:
+                                logger.error(f"Error in email thread: {e}", exc_info=True)
+                        
+                        thread = threading.Thread(target=send_email_thread, daemon=True)
+                        thread.start()
+                        logger.info(f"Hospital registration email queued for hospital {hospital['id']}")
+                    except Exception as email_error:
+                        logger.error(f"Error sending hospital registration email: {email_error}", exc_info=True)
+                else:
+                    # Hospital not registered yet, but payment is verified
+                    # Send email with data from payment metadata
+                    logger.info(f"Hospital not registered yet for payment {payment_id} - sending email with payment metadata")
+                    
+                    from services.email_service import send_hospital_registration_email
+                    try:
+                        # Prepare hospital data from payment metadata
+                        hospital_data = {
+                            "name": payment_metadata.get("customer_name") or "Hospital Registration",
+                            "email": payment_metadata.get("customer_email") or "",
+                            "mobile": payment_metadata.get("customer_phone") or "",
+                            "address_line1": "",
+                            "address_line2": "",
+                            "address_line3": "",
+                            "city": "",
+                            "state": "",
+                            "pincode": "",
+                            "upi_id": "",
+                            "gpay_upi_id": "",
+                            "phonepay_upi_id": "",
+                            "paytm_upi_id": "",
+                            "bhim_upi_id": "",
+                            "registration_date": datetime.now().isoformat(),
+                            "plan_name": payment_metadata.get("plan_name", "Unknown"),
+                            "payment_id": payment_id,
+                            "amount": payment_metadata.get("total_amount", payment.get("amount"))
+                        }
+                        
+                        # Send email in background thread (don't block webhook response)
+                        import threading
+                        def send_email_thread():
+                            try:
+                                import asyncio
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                loop.run_until_complete(send_hospital_registration_email(hospital_data))
+                                loop.close()
+                            except Exception as e:
+                                logger.error(f"Error in email thread: {e}", exc_info=True)
+                        
+                        thread = threading.Thread(target=send_email_thread, daemon=True)
+                        thread.start()
+                        logger.info(f"Hospital registration email queued for payment {payment_id} (hospital not yet registered)")
+                    except Exception as email_error:
+                        logger.error(f"Error sending hospital registration email from payment metadata: {email_error}", exc_info=True)
+            
             logger.info(f"Payment {payment_id} marked as COMPLETED via Cashfree webhook")
             
         elif payment_status == "FAILED":

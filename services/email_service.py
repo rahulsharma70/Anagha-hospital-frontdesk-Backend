@@ -176,6 +176,9 @@ BHIM UPI: {hospital_data.get('bhim_upi_id', 'N/A')}
 
 Registration Date: {hospital_data.get('registration_date', 'N/A')}
 Hospital ID: {hospital_data.get('id', 'N/A')}
+{f"Plan: {hospital_data.get('plan_name', 'N/A')}" if hospital_data.get('plan_name') else ""}
+{f"Payment ID: {hospital_data.get('payment_id', 'N/A')}" if hospital_data.get('payment_id') else ""}
+{f"Payment Amount: ₹{hospital_data.get('amount', 'N/A')}" if hospital_data.get('amount') else ""}
 
 Please review and approve/reject this registration.
 """
@@ -207,6 +210,9 @@ Please review and approve/reject this registration.
             <p><span class="label">State:</span> {hospital_data.get('state', 'N/A')}</p>
             <p><span class="label">Pincode:</span> {hospital_data.get('pincode', 'N/A')}</p>
             <p><span class="label">Hospital ID:</span> {hospital_data.get('id', 'N/A')}</p>
+            {f"<p><span class=\"label\">Plan:</span> {hospital_data.get('plan_name', 'N/A')}</p>" if hospital_data.get('plan_name') else ""}
+            {f"<p><span class=\"label\">Payment ID:</span> {hospital_data.get('payment_id', 'N/A')}</p>" if hospital_data.get('payment_id') else ""}
+            {f"<p><span class=\"label\">Payment Amount:</span> ₹{hospital_data.get('amount', 'N/A')}</p>" if hospital_data.get('amount') else ""}
         </div>
     </div>
 </body>

@@ -93,10 +93,10 @@ def get_public_pricing():
         return {
             "plans": [
                 {
-                    "name": "Starter",
+                    "name": "Small Clinic",
                     "description": "For 1 Doctor / 1 Hospital",
-                    "installationPrice": 1,
-                    "monthlyPrice": 1,
+                    "installationPrice": 5001,
+                    "monthlyPrice": 1111,
                     "features": [
                         "1 Doctor profile",
                         "1 Hospital",
@@ -108,10 +108,10 @@ def get_public_pricing():
                     "popular": False,
                 },
                 {
-                    "name": "Professional",
-                    "description": "For 5 Doctors in 1 Hospital",
-                    "installationPrice": 5,
-                    "monthlyPrice": 5,
+                    "name": "Medium (≤5 Drs)",
+                    "description": "For up to 5 Doctors in 1 Hospital",
+                    "installationPrice": 11000,
+                    "monthlyPrice": 2111,
                     "features": [
                         "Up to 5 Doctor profiles",
                         "1 Hospital",
@@ -124,10 +124,10 @@ def get_public_pricing():
                     "popular": True,
                 },
                 {
-                    "name": "Enterprise",
+                    "name": "Corporate",
                     "description": "For 10 Doctors & 5 Hospitals",
-                    "installationPrice": 10,
-                    "monthlyPrice": 10,
+                    "installationPrice": 21000,
+                    "monthlyPrice": 5111,
                     "features": [
                         "Up to 10 Doctor profiles",
                         "Up to 5 Hospitals (same ownership)",
@@ -141,7 +141,11 @@ def get_public_pricing():
                 },
             ],
             "currency": "INR",
-            "currency_symbol": "₹"
+            "currency_symbol": "₹",
+            "invoiceLabels": {
+                "installationFee": "One-Time Software Activation & License Fee",
+                "monthlyFee": "Monthly Technical Support & Maintenance Charges"
+            }
         }
 
 

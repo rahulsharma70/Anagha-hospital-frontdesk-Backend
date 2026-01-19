@@ -144,6 +144,73 @@ def register_hospital(
                 detail="Failed to register hospital"
             )
 
+        # Hospital registered successfully
+        hospital = result.data[0]
+        hospital_id = hospital["id"]
+        
+        # Link payment to hospital
+        try:
+            payment_id = hospital.payment_id  # From HospitalCreate schema (Pydantic model)
+            if payment_id:
+                supabase.table("payments").update({
+                    "hospital_id": hospital_id,
+                    "updated_at": datetime.now().isoformat()
+                }).eq("id", payment_id).execute()
+                logger.info(f"Payment {payment_id} linked to hospital {hospital_id}")
+        except Exception as link_error:
+            logger.warning(f"Could not link payment to hospital: {link_error}")
+        
+        # Add payment info to hospital_data for email
+        payment_info = {}
+        if hospital.payment_id:
+            payment_info["payment_id"] = hospital.payment_id
+            # Get payment details for email
+            try:
+                payment_result = supabase.table("payments").select("amount, metadata").eq("id", hospital.payment_id).execute()
+                if payment_result.data:
+                    payment = payment_result.data[0]
+                    payment_info["amount"] = payment.get("amount")
+                    payment_metadata = payment.get("metadata") or {}
+                    if payment_metadata.get("plan_name"):
+                        payment_info["plan_name"] = payment_metadata.get("plan_name")
+            except Exception as payment_error:
+                logger.warning(f"Could not fetch payment details for email: {payment_error}")
+        
+        # Send hospital registration email to admin in background
+        try:
+            hospital_data = {
+                "id": hospital.get("id"),
+                "name": hospital.get("name"),
+                "email": hospital.get("email"),
+                "mobile": hospital.get("mobile"),
+                "address_line1": hospital.get("address_line1"),
+                "address_line2": hospital.get("address_line2"),
+                "address_line3": hospital.get("address_line3"),
+                "city": hospital.get("city"),
+                "state": hospital.get("state"),
+                "pincode": hospital.get("pincode"),
+                "upi_id": hospital.get("upi_id"),
+                "gpay_upi_id": hospital.get("gpay_upi_id"),
+                "phonepay_upi_id": hospital.get("phonepay_upi_id"),
+                "paytm_upi_id": hospital.get("paytm_upi_id"),
+                "bhim_upi_id": hospital.get("bhim_upi_id"),
+                "registration_date": hospital.get("created_at") or datetime.now().isoformat(),
+                **payment_info  # Include payment_id, amount, plan_name if available
+            }
+            
+            # Send email in background task
+            background_tasks.add_task(send_hospital_registration_email, hospital_data, hospital_id)
+            logger.info(f"Hospital registration email queued for hospital {hospital_id}")
+        except Exception as email_error:
+            logger.error(f"Error queuing hospital registration email: {email_error}", exc_info=True)
+            # Don't fail registration if email fails
+        
+        return {
+            "message": "Hospital registered successfully. Registration request has been sent for admin approval.",
+            "hospital_id": hospital_id,
+            "status": hospital.get("status", "pending")
+        }
+
     except HTTPException:
         raise
     except Exception as e:
