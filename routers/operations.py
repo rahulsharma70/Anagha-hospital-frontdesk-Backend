@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from datetime import date, datetime
 from database import get_supabase
 from schemas import OperationCreate, OperationResponse
 from auth import get_current_user, get_current_doctor
 from typing import List
 import logging
+from services.whatsapp_service import send_whatsapp_message_by_hospital_id
+from services.message_templates import get_confirmation_message
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +15,8 @@ router = APIRouter(prefix="/api/operations", tags=["operations"])
 @router.post("/book", response_model=dict)
 def book_operation(
     operation: OperationCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """Book an operation (for patients and pharma professionals) - using Supabase"""
     supabase = get_supabase()
@@ -104,6 +107,29 @@ def book_operation(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Operation created but hospital_id was not persisted. Please contact support."
             )
+        
+        # Send WhatsApp confirmation if enabled
+        if background_tasks and (hospital.get("whatsapp_enabled") == "true" or hospital.get("whatsapp_enabled") is True):
+            try:
+                message = get_confirmation_message(
+                    patient_name=current_user.get("name", ""),
+                    doctor_name=doctor.get("name", ""),
+                    date=str(operation.date),
+                    time_slot=None,  # Operations don't have time slots
+                    hospital_name=hospital.get("name", ""),
+                    specialty=operation.specialty.value if hasattr(operation.specialty, 'value') else str(operation.specialty),
+                    custom_template=hospital.get("whatsapp_confirmation_template")
+                )
+                background_tasks.add_task(
+                    send_whatsapp_message_by_hospital_id,
+                    hospital_id=hospital_id,
+                    mobile=current_user.get("mobile", ""),
+                    message=message
+                )
+                logger.info(f"WhatsApp notification queued for operation {db_operation['id']}")
+            except Exception as whatsapp_error:
+                logger.error(f"Error queuing WhatsApp notification for operation: {whatsapp_error}")
+                # Don't fail operation booking if WhatsApp fails
         
         # Return response with patient and doctor names
         return {

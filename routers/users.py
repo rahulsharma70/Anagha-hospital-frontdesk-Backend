@@ -414,17 +414,117 @@ def get_all_doctors(current_user: dict = Depends(get_current_user)):
         return []
 
 @router.get("/doctors/public")
-def get_all_doctors_public():
-    """Get list of all registered doctors - public endpoint for booking pages. No authentication required."""
+def get_all_doctors_public(q: Optional[str] = None):
+    """Get list of all registered doctors - public endpoint for booking pages. No authentication required.
+    Supports search query parameter for autocomplete functionality.
+    
+    Query params:
+    - q: Optional search query to filter doctors by name, specialization, or degree
+    """
     supabase = get_supabase()
     if not supabase:
         return []
     
     try:
-        result = supabase.table("doctors").select("id, name, mobile, degree, institute_name, specialization, hospital_id").eq("is_active", True).execute()
+        query = supabase.table("doctors").select("id, name, mobile, degree, institute_name, specialization, hospital_id").eq("is_active", True)
+        
+        # If search query provided, filter by name or specialization
+        if q and q.strip():
+            search_term = q.strip().lower()
+            # Note: Supabase doesn't support ILIKE directly, so we fetch all and filter
+            # For better performance, consider using Postgres full-text search
+            result = query.execute()
+            if result.data:
+                filtered = [
+                    doc for doc in result.data
+                    if search_term in doc.get("name", "").lower() or
+                       search_term in doc.get("specialization", "").lower() or
+                       search_term in doc.get("degree", "").lower()
+                ]
+                return filtered
+            return []
+        
+        result = query.execute()
         return result.data if result.data else []
     except Exception as e:
-        print(f"Error fetching doctors: {e}")
+        logger.error(f"Error fetching doctors: {e}")
+        return []
+
+@router.get("/doctors/search")
+def search_doctors(q: Optional[str] = None):
+    """Search doctors with autocomplete - public endpoint. No authentication required.
+    
+    Query params:
+    - q: Search query to filter doctors by name, specialization, or degree
+    """
+    return get_all_doctors_public(q=q)
+
+@router.get("/cities/search")
+def search_cities(q: Optional[str] = None):
+    """Search cities with autocomplete - public endpoint. No authentication required.
+    
+    Query params:
+    - q: Search query to filter cities by name
+    """
+    supabase = get_supabase()
+    if not supabase:
+        return []
+    
+    try:
+        # Check if cities table exists, if not return empty list
+        # Try to get unique cities from hospitals table as fallback
+        if q and q.strip():
+            search_term = q.strip().lower()
+            # Try cities table first
+            try:
+                result = supabase.table("cities").select("id, name, state").ilike("name", f"%{search_term}%").limit(20).execute()
+                if result.data:
+                    return result.data
+            except Exception:
+                # Cities table doesn't exist, use hospitals table as fallback
+                pass
+            
+            # Fallback: Get unique cities from hospitals table
+            result = supabase.table("hospitals").select("city, state").not_.is_("city", "null").execute()
+            if result.data:
+                cities = {}
+                for hospital in result.data:
+                    city_name = hospital.get("city", "").lower()
+                    if search_term in city_name:
+                        city_key = f"{hospital.get('city')}_{hospital.get('state', '')}"
+                        if city_key not in cities:
+                            cities[city_key] = {
+                                "id": len(cities) + 1,
+                                "name": hospital.get("city"),
+                                "state": hospital.get("state", "")
+                            }
+                return list(cities.values())[:20]
+            return []
+        else:
+            # No query, return empty or limited results
+            try:
+                result = supabase.table("cities").select("id, name, state").limit(20).execute()
+                if result.data:
+                    return result.data
+            except Exception:
+                pass
+            
+            # Fallback: Get unique cities from hospitals
+            result = supabase.table("hospitals").select("city, state").not_.is_("city", "null").limit(20).execute()
+            if result.data:
+                cities = {}
+                for hospital in result.data:
+                    city_key = f"{hospital.get('city')}_{hospital.get('state', '')}"
+                    if city_key not in cities:
+                        cities[city_key] = {
+                            "id": len(cities) + 1,
+                            "name": hospital.get("city"),
+                            "state": hospital.get("state", "")
+                        }
+                return list(cities.values())
+            return []
+    except Exception as e:
+        logger.error(f"Error searching cities: {e}")
         return []
 
 @router.patch("/doctors/{doctor_id}/hospital")
