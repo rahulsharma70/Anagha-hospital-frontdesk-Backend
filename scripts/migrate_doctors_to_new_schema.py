@@ -11,7 +11,7 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from database import get_supabase
+from core.database import get_supabase
 
 def migrate_doctors():
     """Migrate doctors from users table to doctors table"""

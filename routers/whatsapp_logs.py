@@ -3,7 +3,7 @@ WhatsApp Message Logs API
 Provides endpoints to view message logs and statistics
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from database import get_supabase
+from core.database import get_supabase
 # Note: Hospital SQLAlchemy model removed - using Supabase now
 from services.message_logger import get_message_logs
 from typing import Optional, List

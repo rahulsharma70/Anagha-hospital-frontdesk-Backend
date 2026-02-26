@@ -4,7 +4,7 @@ Logs all critical actions for legal safety and compliance
 """
 from datetime import datetime
 from typing import Optional, Dict, Any
-from database import get_supabase
+from core.database import get_supabase
 
 
 def log_audit_event(

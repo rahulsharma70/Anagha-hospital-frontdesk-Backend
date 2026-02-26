@@ -9,8 +9,8 @@ import hashlib
 import time
 from typing import Optional, Dict, Any
 from datetime import datetime
-from database import get_supabase
-from payment_gateway import PaymentGateway
+from core.database import get_supabase
+from .payment_gateway import PaymentGateway
 import logging
 
 logger = logging.getLogger(__name__)

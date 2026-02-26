@@ -10,7 +10,7 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from database import get_supabase
+from core.database import get_supabase
 from services.audit_logger import log_message_send
 from services.error_monitoring import capture_exception
 import logging

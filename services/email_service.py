@@ -6,8 +6,8 @@ import aiosmtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional, Dict
-from database import get_supabase
-import config
+from core.database import get_supabase
+from core.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -48,13 +48,13 @@ def get_hospital_smtp_config(hospital_id: Optional[int] = None) -> Dict:
     
     # Fallback to global config
     return {
-        "host": config.SMTP_HOST,
-        "port": config.SMTP_PORT,
-        "username": config.SMTP_USERNAME,
-        "password": config.SMTP_PASSWORD,
-        "from_email": config.SMTP_FROM_EMAIL or config.SMTP_USERNAME,
+        "host": settings.SMTP_HOST,
+        "port": settings.SMTP_PORT,
+        "username": settings.SMTP_USERNAME,
+        "password": settings.SMTP_PASSWORD,
+        "from_email": settings.SMTP_FROM_EMAIL or settings.SMTP_USERNAME,
         "use_ssl": False,
-        "enabled": bool(config.SMTP_HOST and config.SMTP_USERNAME)
+        "enabled": bool(settings.SMTP_HOST and settings.SMTP_USERNAME)
     }
 
 
@@ -147,7 +147,7 @@ async def send_hospital_registration_email(hospital_data: dict, hospital_id: Opt
     Returns:
         True if email sent successfully, False otherwise
     """
-    admin_email = config.ADMIN_EMAIL
+    admin_email = settings.ADMIN_EMAIL
     
     subject = f"New Hospital Registration Request: {hospital_data.get('name', 'Unknown')}"
     

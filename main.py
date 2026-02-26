@@ -1,208 +1,94 @@
-"""
-Main entry point for the FastAPI application
-Used for deployment on Render and other platforms
-"""
-
-import os
-import sys
-from datetime import datetime
-from fastapi import FastAPI
+import logging
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from core.config import settings
+from core.database import init_db
+from core.limiter import init_redis
+from fastapi_limiter import FastAPILimiter
 
-# Import the FastAPI app from server_web
-from server_web import app
-from database import get_supabase
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# This allows Render to use: uvicorn backend.main:app
-# Or: python -m uvicorn backend.main:app
-__all__ = ["app"]
+# Import routers once they are refactored
+from routers import users, hospitals, appointments, operations, payments, admin, cities, whatsapp_logs
 
-# Additional routes for deployment and monitoring
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("🚀 Starting Unified Hospital API Server...")
+    init_db()
+    # Initialize Redis for rate limiting
+    redis_conn = await init_redis()
+    if redis_conn:
+        await FastAPILimiter.init(redis_conn)
+        logger.info("✅ Rate limiter initialized.")
+    else:
+        logger.warning("⚠️ Rate limiting will be disabled (Redis unavailable).")
+    yield
+    # Shutdown
+    logger.info("🛑 Shutting down Server...")
 
-@app.get("/")
-async def root():
-    """Root endpoint - API information"""
-    return {
-        "message": "Hospital Booking System API",
-        "version": "1.0.0",
-        "status": "running",
-        "timestamp": datetime.now().isoformat(),
-        "docs": "/docs",
-        "health": "/health"
-    }
+app = FastAPI(
+    title="Hospital Booking System API",
+    description="Unified API for Web and Mobile Hospital Booking",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        settings.FRONTEND_URL,
+        "https://anaghahealthconnect.com",
+        "https://www.anaghahealthconnect.com",
+        "http://localhost:5173",
+        "http://localhost:3000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(users.router)
+app.include_router(hospitals.router)
+app.include_router(appointments.router)
+app.include_router(operations.router)
+app.include_router(payments.router)
+app.include_router(admin.router)
+app.include_router(whatsapp_logs.router)
+
+# Validation exception handler
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    error_details = [{"field": ".".join(str(loc) for loc in e["loc"]), "message": e["msg"]} for e in errors]
+    return JSONResponse(
+        status_code=422,
+        content={"detail": error_details, "message": "Validation error"}
+    )
+
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global Error handling {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error.", "message": str(exc) if settings.ENVIRONMENT != "production" else "An unexpected error occurred."}
+    )
 
 @app.get("/health")
 async def health_check():
-    """Enhanced health check endpoint"""
-    try:
-        supabase = get_supabase()
-        db_status = "disconnected"
-        
-        if supabase:
-            try:
-                # Test database connection
-                supabase.table("hospitals").select("id").limit(1).execute()
-                db_status = "connected"
-            except Exception as db_error:
-                db_status = f"error: {str(db_error)}"
-        else:
-            db_status = "not_configured"
-        
-        return {
-            "status": "healthy" if db_status == "connected" else "degraded",
-            "database": db_status,
-            "service": "web",
-            "timestamp": datetime.now().isoformat(),
-            "environment": os.getenv("ENVIRONMENT", "production")
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "unhealthy",
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-
-@app.get("/ready")
-async def readiness_check():
-    """Readiness check endpoint - checks if service is ready to accept traffic"""
-    try:
-        supabase = get_supabase()
-        if not supabase:
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "ready": False,
-                    "reason": "Database not configured",
-                    "timestamp": datetime.now().isoformat()
-                }
-            )
-        
-        # Test database connection
-        supabase.table("hospitals").select("id").limit(1).execute()
-        
-        return {
-            "ready": True,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "ready": False,
-                "reason": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-
-@app.get("/live")
-async def liveness_check():
-    """Liveness check endpoint - checks if service is alive"""
-    return {
-        "alive": True,
-        "timestamp": datetime.now().isoformat()
-    }
-
-@app.get("/info")
-async def system_info():
-    """System information endpoint"""
-    try:
-        supabase = get_supabase()
-        db_info = {
-            "configured": supabase is not None,
-            "status": "connected" if supabase else "not_configured"
-        }
-        
-        if supabase:
-            try:
-                # Get database stats
-                hospitals_result = supabase.table("hospitals").select("id", count="exact").execute()
-                users_result = supabase.table("users").select("id", count="exact").execute()
-                
-                db_info["stats"] = {
-                    "hospitals": hospitals_result.count if hasattr(hospitals_result, 'count') else "unknown",
-                    "users": users_result.count if hasattr(users_result, 'count') else "unknown"
-                }
-            except Exception:
-                db_info["stats"] = "unavailable"
-        
-        return {
-            "service": "Hospital Booking System API",
-            "version": "1.0.0",
-            "environment": os.getenv("ENVIRONMENT", "production"),
-            "database": db_info,
-            "timestamp": datetime.now().isoformat(),
-            "python_version": sys.version.split()[0] if sys.version else "unknown"
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-
-@app.get("/status")
-async def status_check():
-    """Status endpoint with detailed system status"""
-    try:
-        supabase = get_supabase()
-        
-        status = {
-            "service": "web",
-            "status": "operational",
-            "timestamp": datetime.now().isoformat(),
-            "components": {}
-        }
-        
-        # Check database
-        if supabase:
-            try:
-                supabase.table("hospitals").select("id").limit(1).execute()
-                status["components"]["database"] = {
-                    "status": "operational",
-                    "message": "Connected"
-                }
-            except Exception as e:
-                status["components"]["database"] = {
-                    "status": "degraded",
-                    "message": str(e)
-                }
-                status["status"] = "degraded"
-        else:
-            status["components"]["database"] = {
-                "status": "not_configured",
-                "message": "Database not configured"
-            }
-        
-        return status
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "service": "web",
-                "status": "error",
-                "error": str(e),
-                "timestamp": datetime.now().isoformat()
-            }
-        )
+    return {"status": "healthy", "service": "api", "version": "2.0.0"}
 
 if __name__ == "__main__":
     import uvicorn
-    import os
-    from config import SERVER_HOST, SERVER_PORT
-    
-    # Get port from environment (Render sets PORT env var)
-    port = int(os.getenv("PORT", SERVER_PORT))
-    host = os.getenv("HOST", SERVER_HOST)
-    
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=False  # Disable reload in production
-    )
-
+    uvicorn.run("main:app", host=settings.SERVER_HOST, port=settings.SERVER_PORT, reload=(settings.ENVIRONMENT=="development"))
